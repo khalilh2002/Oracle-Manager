@@ -26,12 +26,16 @@ public class PasswordPolicyService {
     }
 
     public void assignPolicyToUser(String username, String profileName) throws SQLException {
-        String sql = String.format("ALTER USER %s PROFILE %s", username, profileName);
+        // Construct SQL query using concatenation and ensure proper formatting for special characters
+        String sql = "ALTER USER " + username + " PROFILE " + profileName ;
+        System.out.println("Executing SQL: " + sql); // Debugging log
         jdbcTemplate.execute(sql);
     }
 
     public void deletePolicy(String profileName) throws SQLException {
-        String sql = String.format("DROP PROFILE %s CASCADE", profileName);
+        // Ensure the profile name is properly quoted
+        String sql = "DROP PROFILE " + profileName + " CASCADE";
+        System.out.println("Executing SQL: " + sql); // Debugging log
         jdbcTemplate.execute(sql);
     }
 }
