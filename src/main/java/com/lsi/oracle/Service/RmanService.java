@@ -1,22 +1,27 @@
 package com.lsi.oracle.Service;
 
 import com.lsi.oracle.Service.ResourceClass.Rman.RmanExecutor;
+import com.lsi.oracle.model.BackupDetails;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 
 @Service
 public class RmanService {
-  //@Value("${project.env.rman.docker-container}")
-  private static String dockerContainer = "oracle-db-yaml";
+  @Value("${project.env.rman.docker-container}")
+  private  String dockerContainer ;
 
-  //@Value("${project.env.rman.is-docker}")
-  private static Boolean isDocker = true;
+  @Value("${project.env.rman.is-docker}")
+  private  Boolean isDocker ;
 
-  public String backup(){
+  public String test(){
+    return "docker container "+dockerContainer+" is docker "+isDocker;
+  }
+
+  public String full_backup(){
     String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
     String command = "RUN {\n" +
       " ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;\n" +
@@ -29,6 +34,17 @@ public class RmanService {
     return     RmanExecutor.executeRmanScript(command,dockerContainer,isDocker);
   }
 
+  public String incremental_backup() {
+    String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+    String command = "RUN {\n" +
+      " ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;\n" +
+      " BACKUP INCREMENTAL LEVEL 1 DATABASE TAG='INCR_" + timestamp + "';\n" +
+      " BACKUP ARCHIVELOG ALL TAG='ARCHIVELOG_" + timestamp + "';\n" +
+      " RELEASE CHANNEL ch1;\n" +
+      "}";
+
+    return RmanExecutor.executeRmanScript(command, dockerContainer, isDocker);
+  }
 
   public String restore_recover(){
 
@@ -63,6 +79,27 @@ public class RmanService {
   }
 
 
+  // 2024-12-29 20:24:30 time format
+  public String restore_backup_date(String date) {
+    String command = "RUN {\n" +
+      " SHUTDOWN IMMEDIATE;\n" + // Ensure the database is properly shut down
+      " STARTUP MOUNT;\n" + // Mount the database for restore
+      " SET UNTIL TIME \"TO_DATE('" + date + "', 'YYYY-MM-DD HH24:MI:SS')\";\n" +
+      " ALLOCATE CHANNEL ch1 DEVICE TYPE DISK;\n" +
+      " RESTORE DATABASE;\n" +
+      " RECOVER DATABASE;\n" +
+      " RELEASE CHANNEL ch1;\n" +
+      " ALTER DATABASE OPEN RESETLOGS;\n" + // Open the database with resetlogs after recovery
+      "}";
 
+    return RmanExecutor.executeRmanScript(command, dockerContainer, isDocker);
+  }
+
+
+  public List<BackupDetails> listBackups() {
+    String command = "LIST BACKUP SUMMARY;";
+    String rmanOutput = RmanExecutor.executeRmanScript(command, dockerContainer, isDocker);
+    return BackupDetails.parseFromRmanOutput(rmanOutput);
+  }
 
 }
