@@ -6,12 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.DoubleSummaryStatistics;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,119 +21,130 @@ public class PerformanceService {
   @Value("${oracle.monitoring.slow-query.threshold:1000000}")
   private long slowQueryThreshold;
 
-  public String getDbId() {
-    String sql = "SELECT DBID FROM V$DATABASE";
-    return jdbcTemplate.queryForObject(sql, new MapSqlParameterSource(), String.class);
+  private final Queue<Map<String, Object>> realtimeMetricsCache = new LinkedList<>();
+  private static final int CACHE_SIZE = 60; // Keep last 60 measurements
+
+  @Scheduled(fixedRate = 5000) // Run every 5 seconds
+  public void updateRealtimeMetrics() {
+    try {
+      Map<String, Object> metrics = getDetailedRealtimeStats();
+      if (realtimeMetricsCache.size() >= CACHE_SIZE) {
+        realtimeMetricsCache.poll();
+      }
+      realtimeMetricsCache.offer(metrics);
+    } catch (Exception e) {
+      log.error("Error updating realtime metrics", e);
+    }
   }
 
-  public List<Map<String, Object>> getSnapshots() {
+  public List<Map<String, Object>> getRealtimeMetrics() {
+    return new ArrayList<>(realtimeMetricsCache);
+  }
+
+  public Map<String, Object> getDetailedRealtimeStats() {
     String sql = """
             SELECT
-                SNAP_ID,
-                TO_CHAR(BEGIN_INTERVAL_TIME, 'YYYY-MM-DD HH24:MI:SS') as BEGIN_INTERVAL_TIME,
-                TO_CHAR(END_INTERVAL_TIME, 'YYYY-MM-DD HH24:MI:SS') as END_INTERVAL_TIME
-            FROM DBA_HIST_SNAPSHOT
-            ORDER BY SNAP_ID DESC
-            FETCH FIRST 100 ROWS ONLY
+                TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') as timestamp,
+                (SELECT COUNT(*)
+                 FROM V$SESSION
+                 WHERE TYPE != 'BACKGROUND') as active_sessions,
+                (SELECT ROUND(VALUE, 2)
+                 FROM V$SYSSTAT
+                 WHERE NAME = 'CPU used by this session') as cpu_usage,
+                (SELECT ROUND(SUM(VALUE)/1024/1024, 2)
+                 FROM V$SYSSTAT
+                 WHERE NAME LIKE '%memory%') as memory_usage,
+                (SELECT ROUND(SUM(BYTES)/1024/1024, 2)
+                 FROM V$DATAFILE) as total_db_size_mb
+            FROM DUAL
             """;
-    return jdbcTemplate.queryForList(sql, new MapSqlParameterSource());
+    try {
+      Map<String, Object> stats = jdbcTemplate.queryForMap(sql, new MapSqlParameterSource());
+
+      // Process the raw values
+      Map<String, Object> processedStats = new HashMap<>();
+      processedStats.put("timestamp", stats.get("TIMESTAMP"));
+      processedStats.put("sessions", stats.get("ACTIVE_SESSIONS"));
+
+      // CPU usage
+      Double cpuUsage = ((Number) stats.get("CPU_USAGE")).doubleValue();
+      processedStats.put("cpu", cpuUsage);
+
+      // Memory in MB
+      processedStats.put("memory", stats.get("MEMORY_USAGE"));
+
+      // Database size in MB
+      processedStats.put("database_size", stats.get("TOTAL_DB_SIZE_MB"));
+
+      return processedStats;
+    } catch (Exception e) {
+      log.error("Error fetching realtime stats", e);
+      throw new DatabaseOperationException("Failed to fetch realtime statistics", e);
+    }
   }
 
-  public List<Map<String, Object>> getDetailedRealtimeStats() {
+  public Map<String, Object> getDetailedSystemMetrics() {
     String sql = """
             SELECT
-                TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') as TIMESTAMP,
-                'CPU Usage' as METRIC_NAME,
-                (SELECT VALUE FROM V$SYSSTAT WHERE NAME = 'CPU used by this session') as VALUE,
-                'Seconds' as METRIC_UNIT
-            FROM DUAL
-            UNION ALL
-            SELECT
-                TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS'),
-                'Memory Usage',
-                (SELECT ROUND((TOTAL_MEMORY - FREE_MEMORY) / TOTAL_MEMORY * 100, 2)
-                 FROM (SELECT * FROM V$MEMORY_DYNAMIC_COMPONENTS
-                       WHERE COMPONENT = 'SGA Target')) as VALUE,
-                'Percentage'
-            FROM DUAL
-            UNION ALL
-            SELECT
-                TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS'),
-                'I/O Usage',
-                (SELECT VALUE FROM V$SYSSTAT
-                 WHERE NAME = 'physical read total bytes') as VALUE,
-                'Bytes'
+                -- System Time
+                TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') as current_time,
+
+                -- Session Metrics
+                (SELECT COUNT(*)
+                 FROM V$SESSION
+                 WHERE TYPE != 'BACKGROUND') as user_sessions,
+
+                -- Memory Metrics
+                (SELECT ROUND(SUM(VALUE)/1024/1024, 2)
+                 FROM V$SYSSTAT
+                 WHERE NAME LIKE '%memory%') as total_memory_used_mb,
+
+                -- Database Size
+                (SELECT ROUND(SUM(BYTES)/1024/1024, 2)
+                 FROM V$DATAFILE) as total_database_size_mb,
+
+                -- System Statistics
+                (SELECT ROUND(VALUE, 2)
+                 FROM V$SYSSTAT
+                 WHERE NAME = 'physical reads') as physical_reads,
+
+                (SELECT ROUND(VALUE, 2)
+                 FROM V$SYSSTAT
+                 WHERE NAME = 'physical writes') as physical_writes,
+
+                -- Session CPU Usage
+                (SELECT ROUND(VALUE, 2)
+                 FROM V$SYSSTAT
+                 WHERE NAME = 'CPU used by this session') as cpu_usage_value
             FROM DUAL
             """;
 
     try {
-      return jdbcTemplate.queryForList(sql, new MapSqlParameterSource());
+      return jdbcTemplate.queryForMap(sql, new MapSqlParameterSource());
     } catch (Exception e) {
-      log.error("Error fetching real-time metrics", e);
-      throw new DatabaseOperationException("Failed to fetch metrics", e);
+      log.error("Error fetching detailed system metrics", e);
+      throw new RuntimeException("Failed to fetch system metrics", e);
     }
   }
 
-  public Map<String, Object> getAwrMetrics(String beginSnapId, String endSnapId) {
+  public Map<String, Object> getIOStats() {
     String sql = """
             SELECT
-                METRIC_NAME,
-                ROUND(AVG(AVERAGE), 2) as AVG_VALUE,
-                MAX(MAXVAL) as MAX_VALUE,
-                MIN(MINVAL) as MIN_VALUE,
-                TO_CHAR(END_TIME, 'YYYY-MM-DD HH24:MI:SS') as TIME_SERIES
-            FROM DBA_HIST_SYSMETRIC_SUMMARY
-            WHERE SNAP_ID BETWEEN :beginSnapId AND :endSnapId
-            AND METRIC_NAME IN (
-                'CPU Usage Per Sec',
-                'Database CPU Time Ratio',
-                'Memory Sorts Ratio',
-                'Physical Read Total Bytes Per Sec'
-            )
-            GROUP BY METRIC_NAME, END_TIME
-            ORDER BY END_TIME
+                d.FILE# as file_id,
+                d.NAME as datafile_name,
+                ROUND(d.BYTES/1024/1024, 2) as size_mb,
+                (SELECT COUNT(*)
+                 FROM V$SESSION s
+                 WHERE s.ROW_WAIT_FILE# = d.FILE#) as active_io_sessions
+            FROM V$DATAFILE d
+            ORDER BY d.FILE#
             """;
 
     try {
-      MapSqlParameterSource params = new MapSqlParameterSource()
-        .addValue("beginSnapId", beginSnapId)
-        .addValue("endSnapId", endSnapId);
-
-      List<Map<String, Object>> metrics = jdbcTemplate.queryForList(sql, params);
-      return Map.of(
-        "metrics", metrics,
-        "summary", getSummaryStats(metrics)
-      );
+      return Map.of("datafiles", jdbcTemplate.queryForList(sql, new MapSqlParameterSource()));
     } catch (Exception e) {
-      log.error("Error fetching AWR metrics", e);
-      throw new DatabaseOperationException("Failed to fetch AWR metrics", e);
+      log.error("Error fetching I/O statistics", e);
+      throw new RuntimeException("Failed to fetch I/O statistics", e);
     }
-  }
-
-  private Map<String, Object> getSummaryStats(List<Map<String, Object>> metrics) {
-    Map<String, List<Double>> metricsByName = metrics.stream()
-      .collect(Collectors.groupingBy(
-        m -> (String) m.get("METRIC_NAME"),
-        Collectors.mapping(
-          m -> ((Number) m.get("AVG_VALUE")).doubleValue(),
-          Collectors.toList()
-        )
-      ));
-
-    Map<String, Object> summary = new HashMap<>();
-    metricsByName.forEach((name, values) -> {
-      DoubleSummaryStatistics stats = values.stream()
-        .mapToDouble(Double::doubleValue)
-        .summaryStatistics();
-
-      summary.put(name, Map.of(
-        "average", stats.getAverage(),
-        "max", stats.getMax(),
-        "min", stats.getMin(),
-        "count", stats.getCount()
-      ));
-    });
-
-    return summary;
   }
 }
