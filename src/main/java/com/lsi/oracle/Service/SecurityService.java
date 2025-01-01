@@ -42,6 +42,8 @@ public class SecurityService {
     // Configure VPD Policy with dynamic schema
     public void configureVPD(VPDPolicyRequest request) {
         String schemaName = request.getSchemaName() != null ? request.getSchemaName() : "C##HR";  // Default to C##HR if schemaName is not provided
+        String statementTypes = request.getStatementTypes() != null ? request.getStatementTypes() : "SELECT"; // Default to SELECT if not provided
+
         String sql = String.format(
                 "BEGIN " +
                         "DBMS_RLS.ADD_POLICY(" +
@@ -50,14 +52,15 @@ public class SecurityService {
                         "policy_name => '%s', " +
                         "function_schema => '%s', " +
                         "policy_function => '%s', " +
-                        "statement_types => 'SELECT' " +  // Adjust the statement types as needed
+                        "statement_types => '%s' " +
                         "); " +
                         "END;",
                 schemaName,
                 request.getTableName(),
                 request.getPolicyName(),
                 schemaName,  // Function schema is the same as object schema
-                request.getPolicyFunction()
+                request.getPolicyFunction(),
+                statementTypes
         );
         jdbcTemplate.execute(sql);
     }
