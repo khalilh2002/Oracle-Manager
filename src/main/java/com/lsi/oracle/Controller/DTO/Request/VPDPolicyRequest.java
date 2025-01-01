@@ -9,6 +9,7 @@ public class VPDPolicyRequest {
     private String policyFunction;   // The function that defines the policy
     private String predicate;        // SQL predicate to filter rows (optional, if applicable)
     private String schemaName;       // Optional schema name for dynamic schema configuration
+    private String statementTypes;   // Statement types for the policy (e.g., SELECT, INSERT)
 
     // Getters and Setters
     public String getPolicyName() {
@@ -49,5 +50,13 @@ public class VPDPolicyRequest {
 
     public void setSchemaName(String schemaName) {
         this.schemaName = schemaName;
+    }
+
+    public String getStatementTypes() {
+        return statementTypes;
+    }
+
+    public void setStatementTypes(String statementTypes) {
+        this.statementTypes = statementTypes;
     }
 }
