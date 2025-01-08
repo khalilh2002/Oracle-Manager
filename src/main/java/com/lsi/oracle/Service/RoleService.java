@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
+import java.util.List;
 
 @Service
 public class RoleService {
@@ -51,5 +52,10 @@ public class RoleService {
     public void deleteRole(String roleName) throws SQLException {
         String sql = String.format("DROP ROLE %s", roleName.toUpperCase());
         jdbcTemplate.execute(sql);
+    }
+
+    public List<String> listRoles() throws SQLException {
+        String sql = "SELECT ROLE FROM DBA_ROLES"; // Use USER_ROLES if needed
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("ROLE"));
     }
 }

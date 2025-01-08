@@ -5,6 +5,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class UserService {
@@ -12,6 +14,11 @@ public class UserService {
 
   public UserService(JdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = jdbcTemplate;
+  }
+
+  public List<Map<String, Object>> listUsers() {
+    String sql = "SELECT username FROM all_users"; // Adjust query if needed to suit your database schema
+    return jdbcTemplate.queryForList(sql);
   }
 
   public String createUser(UserRequest userRequest) throws SQLException {
@@ -31,6 +38,8 @@ public class UserService {
 
     return "SQL: " + sql + " :: executed successfully";
   }
+
+
 
   public String modifyUser(UserRequest userRequest) throws SQLException {
     if (userRequest.password() != null && !userRequest.password().isEmpty()) {

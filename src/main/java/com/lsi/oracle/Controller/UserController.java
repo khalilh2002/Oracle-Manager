@@ -5,6 +5,8 @@ import com.lsi.oracle.Service.UserService;
 import org.springframework.web.bind.annotation.*;
 
 import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 public class UserController {
@@ -36,6 +38,11 @@ public class UserController {
             return e.getMessage();
         }
         return "User " + userRequest.username() + " modified.";
+    }
+
+    @GetMapping("/user/list")
+    public List<Map<String, Object>> listUsers() {
+        return userService.listUsers();
     }
 
     @DeleteMapping("/user/delete")

@@ -61,4 +61,15 @@ public class RoleController {
         }
         return "Role " + roleRequest.roleName() + " deleted successfully.";
     }
+
+    @GetMapping("/role/list")
+    public Object listRoles() {
+        try {
+            return roleService.listRoles();
+        } catch (SQLException e) {
+            return "SQL EXCEPTION::" + e.getMessage();
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
 }

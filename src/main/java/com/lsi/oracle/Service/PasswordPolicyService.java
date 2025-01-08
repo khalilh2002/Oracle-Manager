@@ -5,6 +5,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class PasswordPolicyService {
@@ -13,6 +15,12 @@ public class PasswordPolicyService {
     public PasswordPolicyService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
+
+    public List<Map<String, Object>> listPolicies() throws SQLException {
+        String sql = "SELECT PROFILE, RESOURCE_NAME, LIMIT FROM DBA_PROFILES WHERE RESOURCE_TYPE = 'PASSWORD'";
+        return jdbcTemplate.queryForList(sql);
+    }
+
 
     public void createPolicy(PasswordPolicyRequest policyRequest) throws SQLException {
         String sql = String.format(

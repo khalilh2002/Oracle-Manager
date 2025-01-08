@@ -7,6 +7,8 @@ import com.lsi.oracle.Service.PasswordPolicyService;
 import org.springframework.web.bind.annotation.*;
 
 import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 public class PasswordPolicyController {
@@ -37,6 +39,18 @@ public class PasswordPolicyController {
         }
         return "Password policy assigned successfully.";
     }
+
+    // Add this in PasswordPolicyController
+    @GetMapping("/password-policy/list")
+    public List<Map<String, Object>> listPasswordPolicies() {
+        try {
+            return passwordPolicyService.listPolicies();
+        } catch (SQLException e) {
+            throw new RuntimeException("SQL EXCEPTION: " + e.getMessage(), e);
+        }
+    }
+
+
 
     // Delete password policy (using DeletePolicyRequest)
     @DeleteMapping("/password-policy/delete")
